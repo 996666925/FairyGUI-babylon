@@ -1,0 +1,40 @@
+{
+  "name": "fairygui-babylon",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "FairyGUI runtime for Babylon.js — a from-scratch port of the FairyGUI UI system onto a Babylon.js render backend.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rslib",
+    "dev": "rslib --watch",
+    "test": "rstest",
+    "test:watch": "rstest --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json"
+  },
+  "peerDependencies": {
+    "@babylonjs/core": "^9.0.0"
+  },
+  "devDependencies": {
+    "@babylonjs/core": "^9.26.0",
+    "@rslib/core": "^1.0.0",
+    "@rstest/adapter-rslib": "^0.11.10",
+    "@rstest/core": "^0.11.10",
+    "@types/node": "^24.13.3",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "useDefineForClassFields": true,
+    "types": ["vite/client"],
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "paths": {
+      "fairygui-babylon": ["../src/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "env.d.ts"]
+}

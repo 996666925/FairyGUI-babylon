@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>fairygui-babylon</title>
+    <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+    <canvas id="stage"></canvas>
+
+    <!--
+        The application is the FairyGUI UI itself, so there is almost no HTML:
+        a canvas, and a small switch for the 3D scene behind it.
+    -->
+    <div id="toolbar">
+        <label><input id="toggle-3d" type="checkbox" /> 3D backdrop</label>
+    </div>
+
+    <div id="message" hidden>
+        <h2>No UI packages</h2>
+        <p>
+            This demo runs the FairyGUI sample application, which needs the
+            packages the editor published. Copy them into:
+        </p>
+        <pre>demo/public/ui/</pre>
+        <p class="muted">
+            Each package is <code>Name.fui</code> plus the atlas beside it
+            (<code>Name_atlas0.png</code>, …). The page reloads by itself once
+            they land.
+        </p>
+        <p class="muted">
+            To look at a single component instead, add
+            <code>?show=Package/Component</code> to the URL.
+        </p>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

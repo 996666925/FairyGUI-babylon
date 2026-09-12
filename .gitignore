@@ -1,0 +1,26 @@
+# Local
+.DS_Store
+*.local
+*.log*
+
+# Dist
+node_modules
+dist/
+storybook-static
+doc_build/
+
+# Reference runtimes this port was written against. Not a build input — see
+# PORTING.md — so it is kept out of the repository.
+.reference/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Demo app
+demo/node_modules/
+demo/dist/
+# The user's own FairyGUI packages; they are assets, not sources.
+demo/public/ui/*
+!demo/public/ui/README.md
