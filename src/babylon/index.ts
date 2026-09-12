@@ -25,6 +25,7 @@ export {
 } from './BabylonRenderer.js';
 
 export { BabylonPackageAssets } from './PackageAssets.js';
+export { bindBabylonInput } from './BabylonInput.js';
 
 export {
     openNativeInput,

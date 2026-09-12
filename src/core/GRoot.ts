@@ -111,6 +111,7 @@ export class GRoot extends GComponent {
 
     /** The backend this root is currently wired to. */
     private _boundFactory: IRenderFactory | null = null;
+    private _inputBindingCleanup: (() => void) | null = null;
 
     /**
      * Attaches this root to a backend and follows its viewport.
@@ -122,10 +123,13 @@ export class GRoot extends GComponent {
         if (this._boundFactory === factory)
             return;
 
+        this._inputBindingCleanup?.();
+        this._inputBindingCleanup = null;
         this._boundFactory = factory;
         factory.attachToStage(this._node);
         factory.onViewportResize((w, h) => this.applyViewport(w, h));
         this.applyViewport(factory.viewportWidth, factory.viewportHeight);
+        this._inputBindingCleanup = factory.bindInput?.(this._inputProcessor) ?? null;
     }
 
     public getTouchPosition(touchId = -1, result?: Point): Point {

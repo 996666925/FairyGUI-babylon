@@ -159,3 +159,4 @@ export {
     UI_LAYER_MASK,
     type BabylonRendererOptions,
 } from './babylon/index.js';
+export { bindBabylonInput } from './babylon/index.js';

@@ -4,7 +4,6 @@ import {
     GComponent,
     GRoot,
     installBabylonRenderer,
-    Point,
     type BabylonRenderer,
     type GObject,
 } from 'fairygui-babylon';
@@ -39,7 +38,6 @@ export class UiHost {
         this.renderer = installBabylonRenderer({ scene, width, height });
         this.root = GRoot.create();
 
-        this._bindInput();
         window.addEventListener('resize', this._onResize);
 
         this.engine.runRenderLoop(() => {
@@ -117,6 +115,7 @@ export class UiHost {
     public dispose(): void {
         window.removeEventListener('resize', this._onResize);
         this.renderer.packageAssets.dispose();
+        this.renderer.dispose();
     }
 
     // ---- internals -------------------------------------------------------
@@ -138,103 +137,4 @@ export class UiHost {
         // The root has its new size by now, so the content can be re-centred.
         this.layout();
     };
-
-    /**
-     * Feeds pointer input to the root, and keeps it away from the scene.
-     *
-     * Positions are converted to **UI units** — CSS pixels relative to the
-     * canvas — which is the space the display list works in.
-     *
-     * ### Why the listeners are on the document, in the capture phase
-     *
-     * Babylon's camera control listens on the canvas itself. A listener
-     * registered there runs *after* it, so by the time the UI knows it was
-     * clicked the camera has already started orbiting — the click goes through
-     * to the 3D scene behind. Catching the event on the way down, on an
-     * ancestor, means it never reaches the canvas at all.
-     */
-    private _bindInput(): void {
-        const canvas = this._canvas;
-        const input = this.root.inputProcessor;
-        const scratch = new Point();
-        /** Pointer the UI has claimed; its events are kept from the scene. */
-        let ownedPointer: number | null = null;
-
-        const toUI = (event: PointerEvent | WheelEvent): { x: number; y: number } => {
-            const rect = canvas.getBoundingClientRect();
-            return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-        };
-
-        /**
-         * Whether a UI object is under the point.
-         *
-         * `GRoot` is not opaque, so its own hit test returns `null` over bare
-         * background — which is exactly the case that must reach the camera.
-         */
-        const overUI = (x: number, y: number): boolean =>
-            this.root.hitTest(scratch.setTo(x, y)) !== null;
-
-        const claim = (event: Event): void => event.stopPropagation();
-
-        document.addEventListener('pointerdown', (event) => {
-            if (event.target !== canvas)
-                return;
-
-            // Capture keeps the pointer aimed here even when it leaves the
-            // window, so a drag that starts on a slider finishes on it. It can
-            // be refused — a synthetic event carries no active pointer — and the
-            // UI works without it, so a refusal is not worth failing over.
-            try {
-                canvas.setPointerCapture(event.pointerId);
-            } catch {
-                // Not capturable; the press is still handled normally.
-            }
-            const { x, y } = toUI(event);
-            if (overUI(x, y)) {
-                ownedPointer = event.pointerId;
-                claim(event);
-            }
-            input.touchBegin(event.pointerId, x, y, event.button);
-        }, true);
-
-        document.addEventListener('pointermove', (event) => {
-            if (event.target !== canvas)
-                return;
-            const { x, y } = toUI(event);
-            // A claimed drag stays claimed until it ends, so dragging a scroll
-            // pane off its own edge does not hand the camera the pointer.
-            if (ownedPointer === event.pointerId)
-                claim(event);
-            if (event.buttons !== 0)
-                input.touchMove(event.pointerId, x, y);
-            else
-                input.mouseMove(x, y);
-        }, true);
-
-        const release = (event: PointerEvent): void => {
-            if (event.target !== canvas)
-                return;
-            const { x, y } = toUI(event);
-            if (ownedPointer === event.pointerId) {
-                claim(event);
-                ownedPointer = null;
-            }
-            if (canvas.hasPointerCapture(event.pointerId))
-                canvas.releasePointerCapture(event.pointerId);
-            input.touchEnd(event.pointerId, x, y);
-        };
-        document.addEventListener('pointerup', release, true);
-        document.addEventListener('pointercancel', release, true);
-
-        document.addEventListener('wheel', (event) => {
-            if (event.target !== canvas)
-                return;
-            const { x, y } = toUI(event);
-            // Scrolling over a scroll pane must not also zoom the camera.
-            if (overUI(x, y))
-                claim(event);
-            // Browsers disagree on the sign; FairyGUI wants positive = down.
-            input.mouseWheel(event.deltaY > 0 ? 1 : -1, x, y);
-        }, { capture: true, passive: false });
-    }
 }

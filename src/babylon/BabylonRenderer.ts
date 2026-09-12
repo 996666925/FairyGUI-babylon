@@ -27,6 +27,8 @@ import {
 import { createUIMaterial, createWhiteTexture } from './UIShader.js';
 import { BabylonPackageAssets } from './PackageAssets.js';
 import { setRenderFactory } from '../core/render/IRenderObject.js';
+import type { InputProcessor } from '../core/event/InputProcessor.js';
+import { bindBabylonInput } from './BabylonInput.js';
 
 /**
  * The Babylon layer a UI mesh lives on.
@@ -113,6 +115,7 @@ export class BabylonRenderer implements IRenderFactory {
     private _orderDirty = true;
     private _drawCounter = 0;
     private _disposed = false;
+    private _inputCleanup: (() => void) | null = null;
 
     public constructor(options: BabylonRendererOptions = {}) {
         const uiLayerMask = options.uiLayerMask ?? UI_LAYER_MASK;
@@ -226,6 +229,20 @@ export class BabylonRenderer implements IRenderFactory {
      */
     public onViewportResize(callback: (width: number, height: number) => void): void {
         this._resizeCallbacks.push(callback);
+    }
+
+    /** Connects the engine canvas to FairyGUI input when running in a browser. */
+    public bindInput(input: InputProcessor): (() => void) | void {
+        this._inputCleanup?.();
+        const cleanup = bindBabylonInput(this.engine, input);
+        if (!cleanup)
+            return;
+        this._inputCleanup = cleanup;
+        return () => {
+            if (this._inputCleanup === cleanup)
+                this._inputCleanup = null;
+            cleanup();
+        };
     }
 
     /**
@@ -423,6 +440,8 @@ export class BabylonRenderer implements IRenderFactory {
         if (this._disposed)
             return;
         this._disposed = true;
+        this._inputCleanup?.();
+        this._inputCleanup = null;
         this._whiteTexture.dispose();
         this.uiRootNode.dispose();
         this.camera.dispose();

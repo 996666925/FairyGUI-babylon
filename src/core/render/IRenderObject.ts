@@ -3,6 +3,7 @@ import type { Color } from '../utils/Color.js';
 import type { Point, Rect } from '../utils/Geometry.js';
 import type { PixelHitTestData } from '../event/HitTest.js';
 import type { BitmapFont } from '../display/BitmapFont.js';
+import type { InputProcessor } from '../event/InputProcessor.js';
 
 /**
  * What FairyGUI's display list needs from a rendering backend.
@@ -281,6 +282,9 @@ export interface IRenderFactory {
 
     /** Registers a callback invoked whenever the viewport size changes. */
     onViewportResize(callback: (width: number, height: number) => void): void;
+
+    /** Connects native backend input to the core processor, when supported. */
+    bindInput?(input: InputProcessor): (() => void) | void;
 }
 
 let factory: IRenderFactory | null = null;
