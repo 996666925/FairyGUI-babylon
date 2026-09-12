@@ -1,8 +1,16 @@
 {
   "name": "fairygui-babylon",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "description": "FairyGUI runtime for Babylon.js — a from-scratch port of the FairyGUI UI system onto a Babylon.js render backend.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/996666925/FairyGUI-babylon.git"
+  },
+  "homepage": "https://github.com/996666925/FairyGUI-babylon#readme",
+  "bugs": {
+    "url": "https://github.com/996666925/FairyGUI-babylon/issues"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
