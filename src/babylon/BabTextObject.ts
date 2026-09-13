@@ -584,11 +584,17 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
         // went on drawing the glyphs it was first built with, and a cooldown's
         // digits never moved on from the number they started at.
         this.ensureLayout();
-        this.ensureRasterised();
         // A text or metrics change resizes the quad, which the base class only
-        // learns about through its own dirty flag.
+        // learns about through its own dirty flag. Read *before* `ensureRasterised`:
+        // that lays the text out a second time, and `ensureLayout` clears
+        // `_layoutRecomputed` on entry — so checking afterwards always read
+        // `false` and the quad kept the size of the first text ever drawn, while
+        // the raster grew to fit the longer one. The whole label was then sampled
+        // into that stale quad: every added character squeezed the glyphs a little
+        // harder, which is a counter whose font gets thinner as it counts up.
         if (this._layoutRecomputed)
             this.invalidateGeometry();
+        this.ensureRasterised();
         super.commitGeometry();
     }
 

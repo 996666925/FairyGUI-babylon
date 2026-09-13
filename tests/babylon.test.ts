@@ -1085,6 +1085,47 @@ describe('text rasterisation', () => {
         expect(Math.max(...xs) - Math.min(...xs), 'block plus a margin each side').toBeCloseTo(30 + 2 * 2, 6);
     });
 
+    test('the quad follows the text as it grows', () => {
+        // The base class only learns the quad has to be rebuilt through
+        // `invalidateGeometry`, and a text that grows without the core
+        // committing a new content size — a counter nobody reads `width` off —
+        // has to be caught here. Missing it left the quad at the size of the
+        // first text ever drawn while the raster grew to fit the longer one, and
+        // the label was sampled into that stale quad: each added character
+        // squeezed the glyphs a little harder, so the font got thinner as the
+        // number got longer.
+        const { scene } = makeScene();
+        const renderer = createBabylonRenderer({
+            scene,
+            textMetrics: new StubMetrics(10, 20),
+            createCanvas: (w, h) => new StubCanvas(w, h),
+        });
+
+        const text = renderer.createText() as BabTextObject;
+        text.fontSize = 10;
+        text.autoSize = AutoSizeType.None;
+        text.setContentSize(60, 26);
+
+        const quadWidths: number[] = [];
+        const textureWidths: number[] = [];
+        for (const value of ['1', '12', '12345']) {
+            text.text = value;
+            text.commitGeometry();
+
+            const positions = Array.from(text.babNode.getVerticesData(VertexBuffer.PositionKind) ?? []).map(Number);
+            const xs = positions.filter((_, i) => i % 3 === 0);
+            quadWidths.push(Math.max(...xs) - Math.min(...xs));
+
+            const texture = text.getTexture() as { getSize(): { width: number } };
+            textureWidths.push(texture.getSize().width);
+        }
+
+        // 10px a character, plus the 2px margin fontSize 10 asks for on each
+        // side; the quad and the raster have to agree at every length.
+        expect(textureWidths).toEqual([14, 24, 54]);
+        expect(quadWidths).toEqual(textureWidths);
+    });
+
     test('text rasterises at the display density by default', () => {
         // The viewport is laid out in CSS pixels while the backbuffer is not, so
         // a one-for-one raster is magnified on a high-density screen and reads
