@@ -147,6 +147,9 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
     private _rasterPadX = 0;
     /** The same margin in UI units, which is what the quad is grown by. */
     private _rasterPadUI = 0;
+    /** Rounded raster block dimensions converted back to UI units. */
+    private _rasterBlockWidthUI = 0;
+    private _rasterBlockHeightUI = 0;
     /** What the texture currently holds, so a redraw is skipped when nothing moved. */
     private _rasterisedLayout: TextLayout | null = null;
     private _rasterisedScale = -1;
@@ -347,9 +350,9 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
         const pad = this._rasterPadUI;
         builder.addQuad(
             x - pad, y - pad,
-            x + layout.textWidth + pad, y - pad,
-            x + layout.textWidth + pad, y + layout.textHeight + pad,
-            x - pad, y + layout.textHeight + pad,
+            x + this._rasterBlockWidthUI + pad, y - pad,
+            x + this._rasterBlockWidthUI + pad, y + this._rasterBlockHeightUI + pad,
+            x - pad, y + this._rasterBlockHeightUI + pad,
             0, 0, 1, 0, 1, 1, 0, 1,
         );
     }
@@ -692,6 +695,12 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
         // UVs are a ratio of.
         this._rasterPadX = pad;
         this._rasterPadUI = pad / scale;
+        // Use the exact rounded raster dimensions for the quad as well. If the
+        // quad used the unrounded layout dimensions, the texture would be
+        // squeezed by up to one texel. Thin repeated glyphs such as "11" then
+        // sample unevenly and appear with different stem weights.
+        this._rasterBlockWidthUI = blockWidth / scale;
+        this._rasterBlockHeightUI = blockHeight / scale;
 
         const ctx = this._texture.getContext() as unknown as Canvas2DContextLike | null;
         if (!ctx)
@@ -713,6 +722,8 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
         this._texture = null;
         this._textureWidth = 0;
         this._textureHeight = 0;
+        this._rasterBlockWidthUI = 0;
+        this._rasterBlockHeightUI = 0;
         this._rasterisedLayout = null;
     }
 

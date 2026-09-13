@@ -1175,6 +1175,37 @@ describe('text rasterisation', () => {
         expect((canvas as unknown as StubCanvas).texts[0]).toBe('abc@0.0,11.4');
     });
 
+    test('fractional text widths are not squeezed when mapped back from the raster', () => {
+        const engine = new FractionalScaledNullEngine({
+            renderWidth: 700,
+            renderHeight: 500,
+            textureSize: 256,
+            deterministicLockstep: false,
+            lockstepMaxSteps: 1,
+        });
+        const renderer = createBabylonRenderer({
+            engine,
+            textMetrics: new StubMetrics(6.25, 20),
+            createCanvas: (w, h) => new StubCanvas(w, h),
+        });
+        const text = renderer.createText() as BabTextObject;
+        text.fontSize = 10;
+        text.text = '11';
+        text.autoSize = AutoSizeType.Both;
+        text.commitGeometry();
+
+        const texture = text.getTexture() as { getSize(): { width: number } };
+        const positions = Array.from(text.babNode.getVerticesData(VertexBuffer.PositionKind) ?? []);
+        const xs = positions.filter((_, index) => index % 3 === 0);
+        const quadWidth = Math.max(...xs) - Math.min(...xs);
+
+        // 12.5 UI px becomes 22 raster pixels; the 5px safety margin becomes
+        // 9 raster pixels per side. The quad must map all 40 texels back at
+        // exactly 1 / 1.75 UI units each, without squeezing the final texel.
+        expect(texture.getSize().width).toBe(40);
+        expect(quadWidth).toBeCloseTo(40 / 1.75, 5);
+    });
+
     test('default text follows a later device-pixel-ratio change', () => {
         const engine = new MutableScaledNullEngine({
             renderWidth: 400,
