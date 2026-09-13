@@ -1,6 +1,6 @@
 {
   "name": "fairygui-babylon",
-  "version": "0.0.1",
+  "version": "0.0.5",
   "type": "module",
   "description": "FairyGUI runtime for Babylon.js — a from-scratch port of the FairyGUI UI system onto a Babylon.js render backend.",
   "repository": {
