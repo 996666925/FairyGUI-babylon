@@ -86,6 +86,16 @@ class AscentCanvas extends StubCanvas {
     public override getContext(): Canvas2DContextLike {
         const ctx = new StubContext(this);
         ctx.inkAscent = 12;
+        ctx.inkDescent = 4;
+        return ctx as unknown as Canvas2DContextLike;
+    }
+}
+
+class TallDescentCanvas extends StubCanvas {
+    public override getContext(): Canvas2DContextLike {
+        const ctx = new StubContext(this);
+        ctx.inkAscent = 18;
+        ctx.inkDescent = 8;
         return ctx as unknown as Canvas2DContextLike;
     }
 }
@@ -93,6 +103,7 @@ class AscentCanvas extends StubCanvas {
 class StubContext {
     /** Reported as the measured ink's ascent when set; unset on a plain stub. */
     public inkAscent: number | undefined;
+    public inkDescent: number | undefined;
     public font = '';
     public textAlign = '';
     public textBaseline = '';
@@ -116,7 +127,7 @@ class StubContext {
     public measureText(text: string): { width: number; actualBoundingBoxAscent?: number; actualBoundingBoxDescent?: number } {
         return this.inkAscent === undefined
             ? { width: text.length * 10 }
-            : { width: text.length * 10, actualBoundingBoxAscent: this.inkAscent, actualBoundingBoxDescent: 4 };
+            : { width: text.length * 10, actualBoundingBoxAscent: this.inkAscent, actualBoundingBoxDescent: this.inkDescent ?? 4 };
     }
 
     public fillText(text: string, x: number, y: number): void {
@@ -1065,8 +1076,8 @@ describe('text rasterisation', () => {
         // stub's 20px line plus the default 3px leading — doubled, plus a
         // transparent margin on every side so glyph ink that overhangs its
         // advance box has somewhere to land instead of being shaved off.
-        // fontSize 10 gives a 2px margin, doubled by the scale.
-        const margin = 4;
+        // fontSize 10 gives a 5px margin, doubled by the scale.
+        const margin = 10;
         expect(texture.getSize().width).toBe(60 + margin * 2);
         expect(texture.getSize().height).toBe(46 + margin * 2);
 
@@ -1080,9 +1091,9 @@ describe('text rasterisation', () => {
 
         const pos = Array.from(text.babNode.getVerticesData(VertexBuffer.PositionKind) ?? []).map(Number);
         const xs = pos.filter((_, i) => i % 3 === 0);
-        // fontSize 10 gives a 2px margin in layout units; the texture's is that
+        // fontSize 10 gives a 5px margin in layout units; the texture's is that
         // doubled by the scale, and the quad uses the layout-unit figure.
-        expect(Math.max(...xs) - Math.min(...xs), 'block plus a margin each side').toBeCloseTo(30 + 2 * 2, 6);
+        expect(Math.max(...xs) - Math.min(...xs), 'block plus a margin each side').toBeCloseTo(30 + 2 * 5, 6);
     });
 
     test('the quad follows the text as it grows', () => {
@@ -1120,9 +1131,9 @@ describe('text rasterisation', () => {
             textureWidths.push(texture.getSize().width);
         }
 
-        // 10px a character, plus the 2px margin fontSize 10 asks for on each
+        // 10px a character, plus the 5px margin fontSize 10 asks for on each
         // side; the quad and the raster have to agree at every length.
-        expect(textureWidths).toEqual([14, 24, 54]);
+        expect(textureWidths).toEqual([20, 30, 60]);
         expect(quadWidths).toEqual(textureWidths);
     });
 
@@ -1136,6 +1147,62 @@ describe('text rasterisation', () => {
 
         expect(renderer.pixelRatio).toBe(1 / engine.getHardwareScalingLevel());
         expect(text.textureScale).toBe(renderer.pixelRatio);
+    });
+
+    test('fractional display density snaps Canvas2D glyph origins to raster texels', () => {
+        const engine = new FractionalScaledNullEngine({
+            renderWidth: 700,
+            renderHeight: 500,
+            textureSize: 256,
+            deterministicLockstep: false,
+            lockstepMaxSteps: 1,
+        });
+        let canvas: StubCanvas | null = null;
+        const renderer = createBabylonRenderer({
+            engine,
+            textMetrics: new StubMetrics(),
+            createCanvas: (w, h) => (canvas = new StubCanvas(w, h)),
+        });
+        const text = renderer.createText() as BabTextObject;
+        text.fontSize = 10;
+        text.text = 'abc';
+        text.autoSize = AutoSizeType.Both;
+        text.commitGeometry();
+
+        expect(renderer.pixelRatio).toBeCloseTo(1.75, 6);
+        // (20px line + 3px leading) / 2 = 11.5 UI px. At 1.75x this is
+        // rounded to 20 device texels, i.e. 11.428... UI px.
+        expect((canvas as unknown as StubCanvas).texts[0]).toBe('abc@0.0,11.4');
+    });
+
+    test('default text follows a later device-pixel-ratio change', () => {
+        const engine = new MutableScaledNullEngine({
+            renderWidth: 400,
+            renderHeight: 300,
+            textureSize: 256,
+            deterministicLockstep: false,
+            lockstepMaxSteps: 1,
+        });
+        const renderer = createBabylonRenderer({
+            engine,
+            textMetrics: new StubMetrics(10, 20),
+            createCanvas: (w, h) => new StubCanvas(w, h),
+        });
+        const text = renderer.createText() as BabTextObject;
+        text.fontSize = 10;
+        text.text = 'abc';
+        text.autoSize = AutoSizeType.Both;
+        text.commitGeometry();
+
+        const initial = text.getTexture() as { getSize(): { width: number } };
+        expect(initial.getSize().width).toBe(40);
+
+        engine.level = 0.5;
+        text.commitGeometry();
+
+        const retina = text.getTexture() as { getSize(): { width: number } };
+        expect(text.textureScale).toBe(2);
+        expect(retina.getSize().width).toBe(80);
     });
 
     test('an editable field with no DOM to hand over to keeps drawing its text', () => {
@@ -1226,17 +1293,17 @@ describe('text rasterisation', () => {
         text.autoSize = AutoSizeType.Both;
         text.leading = 0;
         text.commitGeometry();
-        // 30px of text and a 20px line, with the 2px margin a 10px font asks for.
-        expect(canvases[0].width, 'text plus a 2px margin each side').toBe(34);
+        // 30px of text and a 20px line, with the 5px margin a 10px font asks for.
+        expect(canvases[0].width, 'text plus a 5px margin each side').toBe(40);
 
         text.stroke = 4;
         text.shadowOffsetX = -6;
         text.shadowOffsetY = 3;
         text.commitGeometry();
 
-        // 2 (ink) + 4/2 (outline) + 6 (the longer shadow axis) = 10 a side.
-        expect(canvases[canvases.length - 1].width).toBe(30 + 10 * 2);
-        expect(canvases[canvases.length - 1].height).toBe(20 + 10 * 2);
+        // 5 (ink) + 4/2 (outline) + 6 (the longer shadow axis) = 13 a side.
+        expect(canvases[canvases.length - 1].width).toBe(30 + 13 * 2);
+        expect(canvases[canvases.length - 1].height).toBe(20 + 13 * 2);
     });
 
     test('a line is placed by centring what sits above the baseline', () => {
@@ -1266,6 +1333,55 @@ describe('text rasterisation', () => {
         // The stub reports a 12px ascent and a 20px line box, so the capitals
         // are centred in it: the baseline sits at (20 + 12) / 2.
         expect(canvases[0].texts[0]).toBe('abc@0.0,16.0');
+    });
+
+    test('a leading value does not push measured glyphs below the raster', () => {
+        const canvases: StubCanvas[] = [];
+        const { scene } = makeScene();
+        const renderer = createBabylonRenderer({
+            scene,
+            textMetrics: new StubMetrics(10, 20),
+            createCanvas: (w, h) => {
+                const canvas = new AscentCanvas(w, h);
+                canvases.push(canvas);
+                return canvas;
+            },
+        });
+
+        const text = renderer.createText() as BabTextObject;
+        text.text = 'abc';
+        text.fontSize = 10;
+        text.autoSize = AutoSizeType.Both;
+        // The default leading is 3px. It belongs between lines, not below the
+        // final line, so the baseline must still be based on lineHeight.
+        text.commitGeometry();
+
+        expect(canvases[0].texts[0]).toBe('abc@0.0,16.0');
+    });
+
+    test('a large ascent and descent remain inside the transparent raster margin', () => {
+        const canvases: StubCanvas[] = [];
+        const { scene } = makeScene();
+        const renderer = createBabylonRenderer({
+            scene,
+            textMetrics: new StubMetrics(10, 20),
+            createCanvas: (w, h) => {
+                const canvas = new TallDescentCanvas(w, h);
+                canvases.push(canvas);
+                return canvas;
+            },
+        });
+        const text = renderer.createText() as BabTextObject;
+        text.text = 'gyp';
+        text.fontSize = 10;
+        text.autoSize = AutoSizeType.Both;
+        text.commitGeometry();
+
+        // The 18px ascent and 8px descent exceed the 20px layout line. The
+        // glyph keeps its natural baseline and the 5px transparent margin keeps
+        // both overhangs inside the raster rather than clipping either edge.
+        expect(canvases[0].texts[0]).toBe('gyp@0.0,19.0');
+        expect(canvases[0].height).toBe(33);
     });
 
     test('the colour is applied as a tint, never baked into the raster', () => {
@@ -1439,9 +1555,9 @@ describe('text rasterisation', () => {
         const positions = Array.from(text.babNode.getVerticesData(VertexBuffer.PositionKind)!);
         for (let i = 0; i < positions.length; i += 3)
             maxX = Math.max(maxX, positions[i]);
-        // The block is 20 wide; the quad carries its 2px raster margin and the
+        // The block is 20 wide; the quad carries its 5px raster margin and the
         // 2px Laya-compatible layout offset.
-        expect(maxX).toBeCloseTo(20 + 2 + 2, 6);
+        expect(maxX).toBeCloseTo(20 + 5 + 2, 6);
 
         text.text = 'abcd';
         text.setContentSize(40, 20);
@@ -1450,7 +1566,7 @@ describe('text rasterisation', () => {
         maxX = 0;
         for (let i = 0; i < after.length; i += 3)
             maxX = Math.max(maxX, after[i]);
-        expect(maxX).toBeCloseTo(40 + 2 + 2, 6);
+        expect(maxX).toBeCloseTo(40 + 5 + 2, 6);
     });
 });
 
@@ -1867,6 +1983,21 @@ class ScaledNullEngine extends NullEngine {
 
     public override getRenderHeight(): number {
         return 1200;
+    }
+}
+
+/** A fractional-density engine, matching common browser DPR values. */
+class FractionalScaledNullEngine extends NullEngine {
+    public override getHardwareScalingLevel(): number {
+        return 4 / 7;
+    }
+}
+
+class MutableScaledNullEngine extends NullEngine {
+    public level = 1;
+
+    public override getHardwareScalingLevel(): number {
+        return this.level;
     }
 }
 

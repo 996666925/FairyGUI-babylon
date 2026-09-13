@@ -138,6 +138,8 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
     private readonly _glyphUV: UV = { u: 0, v: 0 };
 
     private _textureScale = 1;
+    /** Whether textureScale should continue following the renderer's DPR. */
+    private _autoTextureScale = true;
     private _texture: DynamicTexture | null = null;
     private _textureWidth = 0;
     private _textureHeight = 0;
@@ -189,6 +191,7 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
 
     public set textureScale(value: number) {
         const scale = value > 0 ? value : 1;
+        this._autoTextureScale = false;
         if (this._textureScale === scale)
             return;
         this._textureScale = scale;
@@ -367,7 +370,12 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
         // larger offset covers a shadow in any direction.
         const outline = Math.max(0, this.stroke) / 2;
         const shadow = Math.max(Math.abs(this.shadowOffsetX), Math.abs(this.shadowOffsetY));
-        return Math.max(2, Math.ceil(this.fontSize * 0.15 + outline + shadow));
+        // A line box is a layout construct, not a guaranteed ink bound. Emoji,
+        // fallback faces and fonts with deep descenders can extend several
+        // pixels beyond it. Keep half an em of transparent room so that ink is
+        // never clipped merely because its actual Canvas2D bounds differ from
+        // the metrics used for layout.
+        return Math.max(2, Math.ceil(this.fontSize * 0.5 + outline + shadow));
     }
 
     /** Horizontal placement of the laid-out block inside the content box. */
@@ -578,6 +586,16 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
     }
 
     public override commitGeometry(): void {
+        // Babylon can change its hardware scaling level when the canvas is
+        // resized or moved between monitors. Keep retina text in sync unless
+        // the caller explicitly selected a textureScale.
+        if (this._autoTextureScale) {
+            const scale = this.renderer.pixelRatio;
+            if (this._textureScale !== scale) {
+                this._textureScale = scale;
+                this.invalidateGeometry();
+            }
+        }
         // Laid out here, not inside `ensureRasterised`: a package font draws
         // glyphs straight from its atlas and has no raster to redraw, so that
         // early return would leave every change to its text unnoticed — the mesh
@@ -656,7 +674,12 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
                 canvas as never,
                 this.renderer.scene,
                 false,
-                Texture.BILINEAR_SAMPLINGMODE,
+                // The canvas is already rasterised at device-pixel density.
+                // Filtering it again while sampling the UI quad blends nearby
+                // glyph texels, which is especially visible at non-integer
+                // DPRs such as 1.75. Nearest keeps the device-pixel coverage
+                // produced by Canvas2D intact.
+                Texture.NEAREST_SAMPLINGMODE,
             );
             this._texture.hasAlpha = true;
             this._textureWidth = width;
@@ -744,20 +767,30 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
 
         for (let i = 0; i < layout.lines.length; i++) {
             const line = layout.lines[i];
-            const x = lineOffsetX(line.width, layout.textWidth, this.align);
+            // Canvas is scaled to device pixels above. Keep the glyph origin
+            // and baseline on that pixel grid too; at fractional DPRs (for
+            // example 1.75) an otherwise valid half-pixel origin makes every
+            // vertical stem go through the texture filter and look soft.
+            const x = this.snapRasterCoordinate(
+                lineOffsetX(line.width, layout.textWidth, this.align),
+                scale,
+            );
             const lineTop = i * layout.lineStep;
-            const y = ascent === null
+            const y = this.snapRasterCoordinate(ascent === null
                 ? lineTop + layout.lineStep / 2
-                : lineTop + (layout.lineStep + ascent) / 2;
+                : lineTop + (layout.lineHeight + ascent) / 2, scale);
 
             if (line.text.length > 0)
-                this.drawStyledLine(ctx, line.text, x, y);
+                this.drawStyledLine(ctx, line.text, x, y, scale);
 
             if (this.underline && line.width > 0) {
                 ctx.fillStyle = toCssColor(RASTER_INK);
                 ctx.globalAlpha = 1;
                 // Just under the baseline the run above was drawn on.
-                const rule = ascent === null ? lineTop + layout.lineHeight - 1 : y + 2;
+                const rule = this.snapRasterCoordinate(
+                    ascent === null ? lineTop + layout.lineHeight - 1 : y + 2,
+                    scale,
+                );
                 ctx.fillRect(x, rule, line.width, 1);
             }
         }
@@ -778,25 +811,25 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
      * opacity. The outline and the shadow keep their own colours — those are
      * absolute, and the reference tinted them the same way.
      */
-    private drawStyledLine(ctx: Canvas2DContextLike, text: string, x: number, y: number): void {
+    private drawStyledLine(ctx: Canvas2DContextLike, text: string, x: number, y: number, scale: number): void {
         const offsetX = this.shadowOffsetX;
         const offsetY = this.shadowOffsetY;
         const hasShadow = offsetX !== 0 || offsetY !== 0;
         const hasStroke = this.stroke > 0;
 
         if (hasShadow) {
-            const sx = x + offsetX;
-            const sy = y + offsetY;
+            const sx = this.snapRasterCoordinate(x + offsetX, scale);
+            const sy = this.snapRasterCoordinate(y + offsetY, scale);
             // The shadow of an outlined glyph is itself outlined, or the
             // outline would punch a hole in the shadow.
             if (hasStroke)
-                this.paint(ctx, text, sx, sy, this.shadowColor, true);
-            this.paint(ctx, text, sx, sy, this.shadowColor, false);
+                this.paint(ctx, text, sx, sy, this.shadowColor, true, scale);
+            this.paint(ctx, text, sx, sy, this.shadowColor, false, scale);
         }
 
         if (hasStroke)
-            this.paint(ctx, text, x, y, this.strokeColor, true);
-        this.paint(ctx, text, x, y, RASTER_INK, false);
+            this.paint(ctx, text, x, y, this.strokeColor, true, scale);
+        this.paint(ctx, text, x, y, RASTER_INK, false, scale);
     }
 
     /**
@@ -809,12 +842,13 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
      */
     private paint(
         ctx: Canvas2DContextLike, text: string, x: number, y: number,
-        color: Color, asStroke: boolean,
+        color: Color, asStroke: boolean, scale: number,
     ): void {
         const css = toCssColor(color);
         ctx.fillStyle = css;
         ctx.strokeStyle = css;
         ctx.globalAlpha = color.a / 255;
+        const drawY = this.snapRasterCoordinate(y, scale);
 
         // The canvas's own lineWidth is shared, so it is set per pass rather
         // than once outside the loop.
@@ -822,11 +856,12 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
             ctx.lineWidth = Math.max(1, this.stroke);
 
         const emit = (value: string, px: number): void => {
+            px = this.snapRasterCoordinate(px, scale);
             if (asStroke) {
                 if (ctx.strokeText)
-                    ctx.strokeText(value, px, y);
+                    ctx.strokeText(value, px, drawY);
             } else {
-                ctx.fillText(value, px, y);
+                ctx.fillText(value, px, drawY);
             }
         };
 
@@ -841,6 +876,16 @@ export class BabTextObject extends BabRenderObject implements ITextObject, IText
             emit(ch, pen);
             pen += ctx.measureText(ch).width + this.letterSpacing;
         }
+    }
+
+    /** Rounds a UI-space coordinate to the nearest raster texel. */
+    private snapRasterCoordinate(value: number, scale: number): number {
+        // Preserve the reference Canvas2D placement at 1x. Snapping matters
+        // once the raster is denser than the UI and would otherwise be sampled
+        // back through fractional device pixels.
+        return scale > 1 && Number.isFinite(scale)
+            ? Math.round(value * scale) / scale
+            : value;
     }
 
     // ---- links -----------------------------------------------------------
