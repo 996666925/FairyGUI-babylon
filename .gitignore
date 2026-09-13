@@ -21,6 +21,3 @@ doc_build/
 # Demo app
 demo/node_modules/
 demo/dist/
-# The user's own FairyGUI packages; they are assets, not sources.
-demo/public/ui/*
-!demo/public/ui/README.md
